@@ -397,9 +397,11 @@ const SEED_DATA = {"metadata":{"project":"SAP Transformation Stakeholder Map","v
 
 const LS_KEY = 'builtgroup_stakeholders_v1';
 
-/* ── Remote data URL (Simon fills this in after creating a secret Gist) ── */
-/* Leave empty string to use localStorage / manual import only             */
+/* ── Remote data URL ─────────────────────────────────────────── */
 const DATA_URL = 'https://gist.githubusercontent.com/SimonJGrace/81705440ae868dc2c2c3ac463ea39717/raw/83d5a3cbc96de8e083d3dc1fdcb669f8bff4d4f4/stakeholders.json';
+
+/* ── Cloudflare Worker proxy URL (holds the write token safely) ─ */
+const WORKER_URL = 'https://solitary-meadow-caca.simon-grace32.workers.dev/';   // paste your workers.dev URL here after setup
 
 /* ── State ──────────────────────────────────────────────────── */
 const state = {
@@ -424,14 +426,27 @@ function loadData() {
 }
 
 function persist() {
+  state.data.metadata.lastUpdated = new Date().toISOString().slice(0, 10);
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(state.data));
+  } catch(e) { console.error('localStorage save failed:', e); }
+  if (WORKER_URL) pushToGist();
+  else setSaveStatus('saved');
+}
+
+async function pushToGist() {
   setSaveStatus('saving');
   try {
-    state.data.metadata.lastUpdated = new Date().toISOString().slice(0, 10);
-    localStorage.setItem(LS_KEY, JSON.stringify(state.data));
+    const r = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state.data)
+    });
+    if (!r.ok) throw new Error('Worker ' + r.status);
     setSaveStatus('saved');
   } catch(e) {
+    console.error('Sync failed:', e);
     setSaveStatus('error');
-    console.error('Save failed:', e);
   }
 }
 
@@ -921,9 +936,9 @@ function exportExcel() {
 ════════════════════════════════════════════════════════════ */
 function setSaveStatus(status) {
   const dot=document.getElementById('save-dot'); const txt=document.getElementById('save-text');
-  if(status==='saving'){ dot.className='save-dot saving'; txt.textContent='Saving...'; }
-  else if(status==='saved'){ dot.className='save-dot'; dot.style.background=''; txt.textContent='Saved'; }
-  else { dot.className='save-dot'; dot.style.background='#FA4F96'; txt.textContent='Save error'; }
+  if(status==='saving'){ dot.className='save-dot saving'; dot.style.background=''; txt.textContent= WORKER_URL ? 'Syncing...' : 'Saving...'; }
+  else if(status==='saved'){ dot.className='save-dot'; dot.style.background=''; txt.textContent= WORKER_URL ? 'Synced' : 'Saved'; }
+  else { dot.className='save-dot'; dot.style.background='#FA4F96'; txt.textContent='Sync error'; }
 }
 
 /* ════════════════════════════════════════════════════════════
