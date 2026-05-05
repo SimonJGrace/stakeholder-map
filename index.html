@@ -234,7 +234,8 @@ a{color:var(--sap-blue);text-decoration:none}
   <button class="btn-outline" onclick="exportJSON()">Export JSON</button>
   <!-- hidden file input for JSON import -->
   <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="importJSON(this)">
-  <button class="btn-outline" onclick="document.getElementById('import-file-input').click()">Import JSON</button>
+  <button class="btn-outline" id="btn-import" onclick="document.getElementById('import-file-input').click()">Import JSON</button>
+  <button class="btn-outline" id="btn-refresh" style="display:none" onclick="fetchRemoteData(true)">&#8635; Refresh</button>
 </header>
 
 <!-- ════════════════════════════════════════════════════
@@ -396,6 +397,10 @@ const SEED_DATA = {"metadata":{"project":"SAP Transformation Stakeholder Map","v
 
 const LS_KEY = 'builtgroup_stakeholders_v1';
 
+/* ── Remote data URL (Simon fills this in after creating a secret Gist) ── */
+/* Leave empty string to use localStorage / manual import only             */
+const DATA_URL = 'https://gist.githubusercontent.com/SimonJGrace/81705440ae868dc2c2c3ac463ea39717/raw/83d5a3cbc96de8e083d3dc1fdcb669f8bff4d4f4/stakeholders.json';
+
 /* ── State ──────────────────────────────────────────────────── */
 const state = {
   data: null, view: 'stream', editingId: null,
@@ -414,8 +419,8 @@ function loadData() {
   try {
     const stored = localStorage.getItem(LS_KEY);
     if (stored) return JSON.parse(stored);
-  } catch(e) { console.warn('localStorage read failed, using seed data', e); }
-  return JSON.parse(JSON.stringify(SEED_DATA));
+  } catch(e) { console.warn('localStorage read failed', e); }
+  return null;
 }
 
 function persist() {
@@ -433,30 +438,65 @@ function persist() {
 /* ════════════════════════════════════════════════════════════
    INIT
 ════════════════════════════════════════════════════════════ */
-function initApp() {
-  state.data = loadData();
-  state.filters.streams = state.data.streams.map(s => s.id);
-  state.filters.dispositions = ['detractor','neutral','supporter','champion'];
-  buildSidebar();
-  if (state.data.stakeholders.length === 0) {
-    showWelcome();
+async function initApp() {
+  if (DATA_URL) {
+    await fetchRemoteData();
   } else {
-    render();
-    setSaveStatus('saved');
+    const stored = loadData();
+    if (stored) {
+      state.data = stored;
+      state.filters.streams = state.data.streams.map(s => s.id);
+      state.filters.dispositions = ['detractor','neutral','supporter','champion'];
+      buildSidebar(); render(); setSaveStatus('saved');
+    } else {
+      showWelcome();
+    }
+  }
+}
+
+async function fetchRemoteData(manual) {
+  setSaveStatus('saving');
+  try {
+    const r = await fetch(DATA_URL + '?_=' + Date.now());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (!data.stakeholders || !data.streams) throw new Error('Invalid data format');
+    state.data = data;
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+    state.filters.streams = state.data.streams.map(s => s.id);
+    state.filters.dispositions = ['detractor','neutral','supporter','champion'];
+    buildSidebar(); render(); setSaveStatus('saved');
+    if (manual) showBanner('Data refreshed — ' + data.stakeholders.length + ' stakeholders loaded');
+  } catch(e) {
+    console.error('Remote fetch failed:', e);
+    const stored = loadData();
+    if (stored) {
+      state.data = stored;
+      state.filters.streams = state.data.streams.map(s => s.id);
+      state.filters.dispositions = ['detractor','neutral','supporter','champion'];
+      buildSidebar(); render();
+      setSaveStatus('error');
+      showBanner('Could not reach data source — showing last saved version');
+    } else {
+      showWelcome();
+    }
   }
 }
 
 function showWelcome() {
+  const isConfigured = !!DATA_URL;
   document.getElementById('main').innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:60px 40px;text-align:center">
       <div style="width:56px;height:56px;background:var(--sap-navy-deep);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff;margin-bottom:24px">B</div>
       <h2 style="font-size:22px;font-weight:700;color:var(--txt);margin-bottom:10px">SAP Transformation Stakeholder Map</h2>
-      <p style="font-size:14px;color:var(--txt2);max-width:400px;line-height:1.6;margin-bottom:32px">
-        No data loaded yet. Import the latest <strong>stakeholders.json</strong> from the Teams channel Files tab to get started.
+      <p style="font-size:14px;color:var(--txt2);max-width:420px;line-height:1.6;margin-bottom:32px">
+        ${isConfigured
+          ? 'Unable to load data from the shared source. Check your internet connection and try again.'
+          : 'No data loaded yet. Import the latest <strong>stakeholders.json</strong> from the Teams channel Files tab to get started.'}
       </p>
-      <button class="btn-save" style="font-size:14px;padding:10px 28px" onclick="document.getElementById('import-file-input').click()">
-        Import stakeholders.json
-      </button>
+      ${isConfigured
+        ? `<button class="btn-save" style="font-size:14px;padding:10px 28px" onclick="fetchRemoteData(true)">&#8635; Try again</button>`
+        : `<button class="btn-save" style="font-size:14px;padding:10px 28px" onclick="document.getElementById('import-file-input').click()">Import stakeholders.json</button>`}
       <p style="margin-top:16px;font-size:12px;color:var(--txt3)">Data stays in your browser only &mdash; nothing is sent anywhere.</p>
     </div>`;
 }
@@ -897,6 +937,10 @@ document.getElementById('edit-modal').addEventListener('click', e=>{ if(e.target
 document.getElementById('add-modal').addEventListener('click', e=>{ if(e.target.id==='add-modal') closeAddModal(); });
 
 /* ── START ──────────────────────────────────────────────────── */
+if (DATA_URL) {
+  document.getElementById('btn-refresh').style.display = '';
+  document.getElementById('btn-import').style.display = 'none';
+}
 initApp();
 </script>
 </body>
