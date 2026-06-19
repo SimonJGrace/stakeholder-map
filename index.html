@@ -93,7 +93,8 @@ a{color:var(--sap-blue);text-decoration:none}
 .scard-name{font-size:14px;font-weight:600;color:var(--txt);flex:1;padding-right:6px;line-height:1.3}
 .sponsor-star{font-size:13px;color:#F59E0B;margin-left:2px}
 .disp-badge{font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap}
-.scard-title{font-size:12px;color:var(--txt2);margin-bottom:10px;line-height:1.4}
+.scard-title{font-size:12px;color:var(--txt2);margin-bottom:6px;line-height:1.4}
+.scard-wants{font-size:11px;color:var(--txt2);font-style:italic;margin-bottom:10px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;border-left:2px solid var(--border);padding-left:7px}
 .scard-bottom{display:flex;align-items:center;justify-content:space-between}
 .understanding-dots{display:flex;gap:3px;align-items:center}
 .u-dot{width:9px;height:9px;border-radius:50%;background:var(--border)}
@@ -622,10 +623,19 @@ function renderStreamMap() {
   }).join('');
 }
 
+function extractWants(notes) {
+  if(!notes) return '';
+  const m = notes.match(/^WANTS:\s*([^\n]+)/);
+  return m ? m[1].trim() : '';
+}
+function escapeHtml(s) {
+  return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 function renderCard(s, stream) {
   const dc = dispColor(s.disposition);
   const dispLabel = s.disposition.charAt(0).toUpperCase()+s.disposition.slice(1);
   const actionCount = s.actions?s.actions.filter(a=>a.status!=='done').length:0;
+  const wants = extractWants(s.notes);
   return `<div class="scard${isTBD(s)?' tbd':''}" style="border-left-color:${stream.color}" onclick="openEditModal('${s.id}')">
     ${isTBD(s)?'<div class="tbd-indicator" title="Needs update"></div>':''}
     <div class="scard-top">
@@ -633,6 +643,7 @@ function renderCard(s, stream) {
       <span class="disp-badge" style="background:${dc}1a;color:${dc}">${dispLabel}</span>
     </div>
     <div class="scard-title">${s.title}</div>
+    ${wants?`<div class="scard-wants" title="${escapeHtml(wants)}">&ldquo;${escapeHtml(wants)}&rdquo;</div>`:''}
     <div class="scard-bottom">
       <div class="understanding-dots" title="Understanding: ${s.understanding}/5">${uDots(s.understanding)}</div>
       ${actionCount>0?`<span class="action-badge">&#9889; ${actionCount}</span>`:'<span class="no-action-text">No actions</span>'}
@@ -903,14 +914,15 @@ function exportExcel() {
   const wb = XLSX.utils.book_new();
   const date = new Date().toISOString().slice(0,10);
 
-  const headers = ['Name','Title','Stream','Org Level','Is Sponsor','Understanding','U. Description','Disposition','Open Actions','Notes'];
+  const headers = ['Name','Title','Stream','Org Level','Is Sponsor','Understanding','U. Description','Disposition','What They Want','Open Actions','Notes'];
   const rows = state.data.stakeholders.map(s => {
     const stream = getStream(s.streamId);
     const openActions = (s.actions||[]).filter(a=>a.status!=='done').map(a=>a.text).join(' | ');
-    return [s.name, s.title, stream.name, s.orgLevel, s.isSponsor?'Yes':'', s.understanding, UNDERSTANDING_LABELS[s.understanding], s.disposition, openActions, s.notes];
+    const wants = extractWants(s.notes);
+    return [s.name, s.title, stream.name, s.orgLevel, s.isSponsor?'Yes':'', s.understanding, UNDERSTANDING_LABELS[s.understanding], s.disposition, wants, openActions, s.notes];
   });
   const ws1 = XLSX.utils.aoa_to_sheet([headers,...rows]);
-  ws1['!cols'] = [22,30,25,14,10,14,22,12,40,40].map(w=>({wch:w}));
+  ws1['!cols'] = [22,30,25,14,10,14,22,12,50,40,40].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb, ws1, 'All Stakeholders');
 
   const aHeaders = ['Stakeholder','Stream','Action','Owner','Due Date','Status'];
